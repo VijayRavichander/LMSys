@@ -1,0 +1,9 @@
+pandas
+json
+numpy
+torch
+transformers
+datasets
+sklearn
+peft
+kaggle

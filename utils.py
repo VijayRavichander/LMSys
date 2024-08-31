@@ -7,6 +7,7 @@ from config import notebook_config, model_config
 from datasets import Dataset
 from transformers import EvalPrediction
 from sklearn.metrics import log_loss, accuracy_score
+from transformers.data.data_collator import pad_without_fast_tokenizer_warning
 
 def preprocess_data():
     df = pd.read_csv(notebook_config.main_data_path)
@@ -70,6 +71,8 @@ class CustomTokenizer:
         responses_a = json.loads(responses_a)
         responses_b = json.loads(responses_b)
         
+         #print(len(prompts)) This is kind of random. Anywhere between 1 - num_procs(8 here)
+        
         rounds = [
             f"<start_of_turn>prompt\n{prompts[i]}<end_of_turn>\n"
             +f"<start_of_turn>response_a\n{responses_a[i]}<end_of_turn>\n"
@@ -86,6 +89,8 @@ class CustomTokenizer:
         return tmp
     
     def __call__(self, batch: dict) -> dict:  
+        
+#        print(len(batch["prompt"])) # 8
         
         texts = [
             self.prepare_text(p, r_a, r_b)
@@ -144,4 +149,70 @@ def compute_metrics(eval_preds: EvalPrediction) -> dict:
         "acc_model_b": acc_head3,
         "log_loss_model_b": loss_head3
     }
+
+
+def process_text(text):
+    return json.loads(text)
+
+
+def test_tokenize(tokenizer, prompt, res_a, res_b, max_length):
+    text = []
+    
+    for p, a, b in zip(prompt, res_a, res_b):
         
+        rounds = [
+            f"<start_of_turn>prompt\n{p[i]}<end_of_turn>\n" + 
+            f"<start_of_turn>prompt\n{a[i]}<end_of_turn>\n" + 
+            f"<start_of_turn>prompt\n{b[i]}<end_of_turn>"
+            for i in range(len(p))
+        ]
+    
+        tmp = "\n".join(rounds)
+        for k in range(len(rounds)):
+            tmp = "\n".join(rounds[k:])
+            if len(tokenizer(tmp)['input_ids']) < max_length:
+                break
+        
+        text.append(tmp)
+    
+    tokenized = tokenizer(text, max_length = max_length, truncation = True, padding = False)
+    inputs_ids = tokenized.input_ids
+    attn_mask = tokenized.attention_mask
+    
+    return inputs_ids, attn_mask
+
+
+@torch.no_grad()
+@torch.cuda.amp.autocast()
+def inference(df, model, tokenizer, device, batch_size, max_length):
+    a_win, b_win, tie_win = [], [], []
+    
+    print(f"DF {df}")
+    for start_idx in range(0, len(df), batch_size):
+        
+        end_idx = min(start_idx + batch_size, len(df))
+        tmp = df.iloc[start_idx : end_idx]
+        
+        input_ids = tmp["input_ids"].to_list()
+        attention_mask = tmp["attention_mask"].to_list()
+        
+        inputs = pad_without_fast_tokenizer_warning(
+                tokenizer, 
+                {'input_ids': input_ids, 'attention_mask': attention_mask}, 
+                padding = 'longest', 
+                pad_to_multiple_of = None,
+                return_tensors = 'pt'
+                )
+        
+        output = model(**inputs.to(device))
+        prob = output.logits.softmax(-1).cpu()
+                
+        a_win.extend(prob[:, 0].tolist())
+        b_win.extend(prob[:, 1].tolist())
+        tie_win.extend(prob[:, 2].tolist())
+        
+    df["winner_model_a"] = a_win
+    df["winner_model_b"] = b_win
+    df["winner_tie"] = tie_win
+    
+    return df

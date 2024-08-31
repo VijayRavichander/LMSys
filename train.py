@@ -12,16 +12,16 @@ from transformers import (
 )
 
 from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training, TaskType
-3
 
 #----------------------------#
+# HF AUTH
+
 from huggingface_hub import login
 from kaggle_secrets import UserSecretsClient
 
 user_secrets = UserSecretsClient()
 access_token = user_secrets.get_secret("hfkey")
 login(token=access_token)
-
 
 #-------------------------#
 # DATA HANDLING
@@ -140,11 +140,13 @@ trainer = Trainer(
     args=training_args, 
     model=model,
     tokenizer=tokenizer,
-    train_dataset=ds.select(train_idx[train_idx]),
-    eval_dataset=ds.select(eval_idx[eval_idx]),
+    train_dataset=ds.select(train_idx),
+    eval_dataset=ds.select(eval_idx),
     compute_metrics=compute_metrics,
     data_collator=DataCollatorWithPadding(tokenizer=tokenizer),
 )
 
 trainer.train()
 trainer.save_model(f"./output/LoRA-v{notebook_config.version}")
+del model
+torch.cuda.empty_cache()
