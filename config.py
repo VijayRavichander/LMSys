@@ -8,7 +8,7 @@ class NotebookConfig:
     add_extra_data : bool = False
     debug : bool = True
     main_data_path : str = f"/kaggle/input/lmsys-chatbot-arena/train.csv"
-    suppl_data_path : str = ""
+    suppl_data_path : str = "/kaggle/input/extra-lmsys-data/lmsys-33k-deduplicated.csv"
     test_data_path: str = f"/kaggle/input/lmsys-chatbot-arena/test.csv"
     train_notebook: bool = True
         
